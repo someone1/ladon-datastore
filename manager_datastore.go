@@ -25,7 +25,6 @@ package datastore
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"cloud.google.com/go/datastore"
@@ -34,8 +33,10 @@ import (
 )
 
 const (
-	ladonPolicyKind = "LadonPolicy"
-	version         = 1
+	ladonPolicyKind          = "LadonPolicy"
+	ladonPolicyAncestorKind  = "LandonPolicyAncestor"
+	landonPolicyAncestorName = "default"
+	version                  = 1
 )
 
 // ladonPolicy is used to represent a ladon.Policy in Google's Datastore
@@ -87,11 +88,11 @@ func (l *ladonPolicy) Load(ps []datastore.Property) error {
 	case -1:
 		// This is here to complete saving the entity should we need to udpate it
 		if l.Version == -1 {
-			return errors.New(fmt.Sprintf("unexpectedly got to version update trigger with incorrect version -1"))
+			return errors.Errorf("unexpectedly got to version update trigger with incorrect version -1")
 		}
 		l.update = true
 	default:
-		return errors.New(fmt.Sprintf("got unexpected version %d when loading entity", l.Version))
+		return errors.Errorf("got unexpected version %d when loading entity", l.Version)
 	}
 	return nil
 }
@@ -102,7 +103,7 @@ func (l *ladonPolicy) Save() ([]datastore.Property, error) {
 	switch l.Effect {
 	case "allow", "deny":
 	default:
-		return nil, errors.New(fmt.Sprintf("got unexpected value for effect: %s", l.Effect))
+		return nil, errors.Errorf("got unexpected value for effect: %s", l.Effect)
 	}
 	return datastore.SaveStruct(l)
 }
@@ -123,10 +124,20 @@ func NewManager(ctx context.Context, client *datastore.Client, namespace string)
 	}
 }
 
-func (m *Manager) createPolicyKey(policyID string) *datastore.Key {
-	key := datastore.NameKey(ladonPolicyKind, policyID, nil)
+func (m *Manager) policyAncestorKey() *datastore.Key {
+	key := datastore.NameKey(ladonPolicyAncestorKind, landonPolicyAncestorName, nil)
 	key.Namespace = m.namespace
 	return key
+}
+
+func (m *Manager) createPolicyKey(policyID string) *datastore.Key {
+	key := datastore.NameKey(ladonPolicyKind, policyID, m.policyAncestorKey())
+	key.Namespace = m.namespace
+	return key
+}
+
+func (m *Manager) newPolicyQuery() *datastore.Query {
+	return datastore.NewQuery(ladonPolicyKind).Ancestor(m.policyAncestorKey()).Namespace(m.namespace)
 }
 
 func (m *Manager) updatePolicyVersionMulti(keys []*datastore.Key) error {
@@ -291,7 +302,7 @@ func (m *Manager) FindRequestCandidates(r *ladon.Request) (ladon.Policies, error
 	// Need Two Queries
 
 	// First, find all plain matches
-	query := datastore.NewQuery(ladonPolicyKind).Filter("s.t =", r.Subject).Filter("s.h =", false).Namespace(m.namespace)
+	query := m.newPolicyQuery().Filter("s.t =", r.Subject).Filter("s.h =", false)
 	policies, err := m.executeQuery(query)
 	if err != nil {
 		return nil, errors.WithStack(err)
@@ -302,7 +313,7 @@ func (m *Manager) FindRequestCandidates(r *ladon.Request) (ladon.Policies, error
 	}
 
 	// Second, get ALL regex templates to match off of, skipping policies we already found
-	query = datastore.NewQuery(ladonPolicyKind).Filter("s.h =", true).Namespace(m.namespace)
+	query = m.newPolicyQuery().Filter("s.h =", true)
 	regexpolicies, rerr := m.executeQuery(query)
 	if rerr != nil {
 		return nil, errors.WithStack(rerr)
@@ -318,7 +329,7 @@ func (m *Manager) FindRequestCandidates(r *ladon.Request) (ladon.Policies, error
 
 // GetAll returns all policies
 func (m *Manager) GetAll(limit, offset int64) (ladon.Policies, error) {
-	query := datastore.NewQuery(ladonPolicyKind).Offset(int(offset)).Limit(int(limit)).Order("__key__").Namespace(m.namespace)
+	query := m.newPolicyQuery().Offset(int(offset)).Limit(int(limit)).Order("__key__")
 
 	return m.executeQuery(query)
 }
@@ -403,8 +414,4 @@ func uniq(input []string) []string {
 	}
 
 	return u
-}
-
-func typecheck() {
-	var _ ladon.Manager = (*Manager)(nil)
 }

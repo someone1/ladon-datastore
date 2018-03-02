@@ -1,0 +1,29 @@
+language: go
+sudo: false
+
+go:
+- 1.9.x
+- 1.10.x
+- tip
+
+before_install:
+- go get github.com/mattn/goveralls
+- go get github.com/alecthomas/gometalinter
+
+install:
+- "$GOPATH/bin/gometalinter --install"
+- curl https://sdk.cloud.google.com > install.sh && chmod +x install.sh
+- "./install.sh --disable-prompts"
+- "$HOME/google-cloud-sdk/bin/gcloud components install beta --quiet"
+- "$HOME/google-cloud-sdk/bin/gcloud components install cloud-datastore-emulator --quiet"
+- "$HOME/google-cloud-sdk/bin/gcloud config set project ladon-datastore-test --quiet"
+- make get
+
+before_script:
+- "$HOME/google-cloud-sdk/bin/gcloud beta emulators datastore start --quiet &"
+- sleep 15
+- "$($HOME/google-cloud-sdk/bin/gcloud beta emulators datastore env-init)"
+
+script:
+- "$GOPATH/bin/goveralls -service=travis-ci"
+- make fmt vet build
