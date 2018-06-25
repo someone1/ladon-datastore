@@ -39,6 +39,11 @@ const (
 	version                  = 1
 )
 
+var (
+	// TypeCheck
+	_ ladon.Manager = (*Manager)(nil)
+)
+
 // ladonPolicy is used to represent a ladon.Policy in Google's Datastore
 type ladonPolicy struct {
 	Key         *datastore.Key       `datastore:"-"`
@@ -50,6 +55,7 @@ type ladonPolicy struct {
 	Resources   []LadonPolicyMatcher `datastore:"r,noindex"`
 	Actions     []LadonPolicyMatcher `datastore:"a,noindex"`
 	Version     int                  `datastore:"v"`
+	Meta        []byte               `datastore:"m,noindex"`
 
 	update bool
 }
@@ -246,10 +252,16 @@ func convertPolicy(policy ladon.Policy) (dPolicy *ladonPolicy, err error) {
 		}
 	}
 
+	meta := []byte("{}")
+	if policy.GetMeta() != nil {
+		meta = policy.GetMeta()
+	}
+
 	dPolicy = &ladonPolicy{
 		Description: policy.GetDescription(),
 		Effect:      policy.GetEffect(),
 		Conditions:  conditions,
+		Meta:        meta,
 	}
 
 	// Matchers
@@ -275,6 +287,7 @@ func (l *ladonPolicy) convertToPolicy() (ladon.Policy, error) {
 	policy.ID = l.ID
 	policy.Effect = l.Effect
 	policy.Conditions = ladon.Conditions{}
+	policy.Meta = l.Meta
 
 	if err := json.Unmarshal(l.Conditions, &policy.Conditions); err != nil {
 		return nil, errors.WithStack(err)
